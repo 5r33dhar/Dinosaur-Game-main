@@ -1,0 +1,244 @@
+import pygame
+import sys
+import random
+import os
+
+# -----------------------------
+# Setup
+# -----------------------------
+pygame.init()
+pygame.font.init()  # Initialize font module
+
+# Font setup (try custom, fallback to Arial)
+BASE_DIR = os.path.dirname(__file__)
+FONT_PATH = os.path.join(BASE_DIR, "assets", "noPressStart2P-Regular.ttf")
+try:
+    game_font = pygame.font.Font(FONT_PATH, 24)
+except FileNotFoundError:
+    print("Custom font not found, using Arial instead.")
+    game_font = pygame.font.SysFont("Arial", 24)
+
+# Screen setup
+screen = pygame.display.set_mode((800, 600))
+clock = pygame.time.Clock()
+pygame.display.set_caption("Dino Game")
+
+# -----------------------------
+# Classes
+# -----------------------------
+class Cloud(pygame.sprite.Sprite):
+    def __init__(self, image, x_pos, y_pos):
+        super().__init__()
+        self.image = image
+        self.rect = self.image.get_rect(center=(x_pos, y_pos))
+
+    def update(self):
+        self.rect.x -= 1  # Move cloud left
+
+
+class Dino(pygame.sprite.Sprite):
+    def __init__(self, x_pos, y_pos):
+        super().__init__()
+        # Load running and ducking sprites
+        self.running_sprites = [
+            pygame.transform.scale(pygame.image.load("Dinosaur-Game-main/assets/Dino1.png"), (80, 100)),
+            pygame.transform.scale(pygame.image.load("Dinosaur-Game-main/assets/Dino2.png"), (80, 100))
+        ]
+        self.ducking_sprites = [
+            pygame.transform.scale(pygame.image.load("Dinosaur-Game-main/assets/DinoDucking1.png"), (110, 60)),
+            pygame.transform.scale(pygame.image.load("Dinosaur-Game-main/assets/DinoDucking2.png"), (110, 60))
+        ]
+
+        self.image = self.running_sprites[0]
+        self.rect = self.image.get_rect(center=(x_pos, y_pos))
+        self.velocity = 50
+        self.gravity = 4.5
+        self.ducking = False
+        self.current_image = 0
+
+    def jump(self):
+        jump_sfx.play()
+        if self.rect.centery >= 360:  # Only jump if on ground
+            self.velocity = -15  # Set upward velocity for jump
+
+    def duck(self):
+        self.ducking = True
+        self.rect.centery = 380
+
+    def unduck(self):
+        self.ducking = False
+        self.rect.centery = 360
+
+    def apply_gravity(self):
+        if self.rect.centery <= 360:
+            self.rect.centery += self.gravity
+
+    def update(self):
+        self.animate()
+        self.apply_gravity()
+
+    def animate(self):
+        self.current_image += 0.05
+        if self.current_image >= 2:
+            self.current_image = 0
+        self.image = self.ducking_sprites[int(self.current_image)] if self.ducking else self.running_sprites[int(self.current_image)]
+
+class Cactus(pygame.sprite.Sprite):
+    def __init__(self, x_pos, y_pos):
+        super().__init__()
+        # Load cactus variations
+        self.sprites = [
+            pygame.transform.scale(pygame.image.load(f"Dinosaur-Game-main/assets/cacti/cactus{i}.png"), (100, 100))
+            for i in range(1, 7)
+        ]
+        self.image = random.choice(self.sprites)
+        self.rect = self.image.get_rect(center=(x_pos, y_pos))
+
+    def update(self):
+        self.rect.x -= game_speed
+
+class Ptero(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.x_pos = 1300
+        self.y_pos = random.choice([280, 295, 350])  # Random height
+        self.sprites = [
+            pygame.transform.scale(pygame.image.load("Dinosaur-Game-main/assets/Ptero1.png"), (84, 62)),
+            pygame.transform.scale(pygame.image.load("Dinosaur-Game-main/assets/Ptero2.png"), (84, 62))
+        ]
+        self.current_image = 0
+        self.image = self.sprites[self.current_image]
+        self.rect = self.image.get_rect(center=(self.x_pos, self.y_pos))
+
+    def update(self):
+        self.animate()
+        self.x_pos -= game_speed
+        self.rect = self.image.get_rect(center=(self.x_pos, self.y_pos))
+
+    def animate(self):
+        self.current_image += 0.025
+        if self.current_image >= 2:
+            self.current_image = 0
+        self.image = self.sprites[int(self.current_image)]
+
+# -----------------------------
+# Game Variables
+# -----------------------------
+game_speed = 5
+player_score = 0
+game_over = False
+obstacle_timer = 0
+obstacle_spawn = False
+obstacle_cooldown = 1000
+
+# Surfaces
+ground = pygame.transform.scale(pygame.image.load("Dinosaur-Game-main/assets/ground.png"), (1280, 20))
+ground_x = 0
+cloud = pygame.transform.scale(pygame.image.load("Dinosaur-Game-main/assets/cloud.png"), (200, 80))
+
+# Groups
+cloud_group = pygame.sprite.Group()
+obstacle_group = pygame.sprite.Group()
+dino_group = pygame.sprite.GroupSingle()
+ptero_group = pygame.sprite.Group()
+
+# Objects
+dinosaur = Dino(50, 360)
+dino_group.add(dinosaur)
+
+# Sounds
+death_sfx = pygame.mixer.Sound("Dinosaur-Game-main/assets/sfx/lose.mp3")
+points_sfx = pygame.mixer.Sound("Dinosaur-Game-main/assets/sfx/100points.mp3")
+jump_sfx = pygame.mixer.Sound("Dinosaur-Game-main/assets/sfx/jump.mp3")
+
+# Events
+CLOUD_EVENT = pygame.USEREVENT
+pygame.time.set_timer(CLOUD_EVENT, 3000)
+
+# -----------------------------
+# Functions
+# -----------------------------
+def end_game():
+    global player_score, game_speed
+    game_over_text = game_font.render("Game Over!", True, "black")
+    score_text = game_font.render(f"Score: {int(player_score)}", True, "black")
+    screen.blit(game_over_text, game_over_text.get_rect(center=(640, 300)))
+    screen.blit(score_text, score_text.get_rect(center=(640, 340)))
+    game_speed = 5
+    cloud_group.empty()
+    obstacle_group.empty()
+
+# -----------------------------
+# Main Game Loop
+# -----------------------------
+while True:
+    # Handle ducking
+    keys = pygame.key.get_pressed()
+    if keys[pygame.K_DOWN]:
+        dinosaur.duck()
+    else:
+        if dinosaur.ducking:
+            dinosaur.unduck()
+
+    # Event handling
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+        if event.type == CLOUD_EVENT:
+            cloud_group.add(Cloud(cloud, 1380, random.randint(50, 300)))
+        if event.type == pygame.KEYDOWN:
+            if event.key in [pygame.K_SPACE, pygame.K_UP]:
+                dinosaur.jump()
+                if game_over:
+                    game_over = False
+                    game_speed = 5
+                    player_score = 0
+
+    screen.fill("white")
+
+    # Collision detection
+    if pygame.sprite.spritecollide(dino_group.sprite, obstacle_group, False):
+        game_over = True
+        death_sfx.play()
+
+    if game_over:
+        end_game()
+    else:
+        # Speed increases slowly
+        game_speed += 0.0025
+        # Play sound every 100 points
+        if round(player_score, 1) % 100 == 0 and int(player_score) > 0:
+            points_sfx.play()
+
+        # Spawn obstacles
+        if pygame.time.get_ticks() - obstacle_timer >= obstacle_cooldown:
+            obstacle_spawn = True
+        if obstacle_spawn:
+            obstacle_random = random.randint(1, 50)
+            if obstacle_random in range(1, 7):
+                obstacle_group.add(Cactus(1280, 340))
+            elif obstacle_random in range(7, 10):
+                obstacle_group.add(Ptero())
+            obstacle_timer = pygame.time.get_ticks()
+            obstacle_spawn = False
+
+        # Update score
+        player_score += 0.1
+        screen.blit(game_font.render(str(int(player_score)), True, "black"), (1150, 10))
+
+        # Update and draw sprites
+        cloud_group.update(); cloud_group.draw(screen)
+        ptero_group.update(); ptero_group.draw(screen)
+        dino_group.update(); dino_group.draw(screen)
+        obstacle_group.update(); obstacle_group.draw(screen)
+
+        # Scroll ground
+        ground_x -= game_speed
+        screen.blit(ground, (ground_x, 360))
+        screen.blit(ground, (ground_x + 1280, 360))
+        if ground_x <= -1280:
+            ground_x = 0
+
+    clock.tick(120)   # Limit FPS
+    pygame.display.update()
